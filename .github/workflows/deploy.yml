@@ -1,0 +1,45 @@
+# fableplus.uk — the site is built inside the Fable + codebase (website/ in the app repo, from the same database
+# as the app) and served by the app backend as one bundle. This workflow pulls that bundle and publishes it to
+# GitHub Pages: on every push, every 6 hours, or on demand (Actions → Deploy fableplus.uk → Run workflow).
+# If the backend can't be reached, the run fails and the last published site stays live.
+name: Deploy fableplus.uk
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      # Set a repository variable BUNDLE_URL when the backend moves (Settings → Secrets and variables → Actions → Variables).
+      BUNDLE_URL: ${{ vars.BUNDLE_URL || 'https://fable-platform-sync.preview.emergentagent.com/api/site/bundle.tar.gz' }}
+    steps:
+      - name: Fetch the site built by the Fable + backend
+        run: |
+          mkdir -p _site
+          curl -fsSL --retry 3 --retry-delay 10 "$BUNDLE_URL" -o site.tar.gz
+          tar xzf site.tar.gz -C _site
+          test -f _site/index.html && test -f _site/CNAME
+          echo "Pages: $(find _site -name '*.html' | wc -l)"
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
